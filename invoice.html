@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web App Invoice Otomatis - Budesak Catering</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            bg: '#FDF4E3',
+                            text: '#3E3228',
+                            gold: '#D4AF37',
+                            green: '#25D366',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <style>
+        /* Premium System Font Stack */
+        body { 
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background-color: #f3f4f6; 
+        }
+        .font-serif-brand { 
+            font-family: Georgia, "Times New Roman", Times, serif; 
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
+        
+        .tabular-nums { font-variant-numeric: tabular-nums; }
+
+        @media print {
+            body { background-color: white !important; margin: 0; padding: 0; }
+            .no-print { display: none !important; }
+            #budesak-invoice-canvas {
+                width: 210mm !important; 
+                min-height: 297mm !important;
+                margin: 0 !important;
+                padding: 12mm 15mm !important; 
+                box-shadow: none !important;
+                border: none !important;
+                transform: scale(1) !important;
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body class="dark:bg-gray-900 text-gray-800 dark:text-gray-100 min-h-screen transition-colors duration-200">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const MENU_OPTIONS = [
+            "Nasi Putih", "Nasi Sela", "Ayam Kecap", "Ayam Lengkuas", "Ayam Sisit", "Ayam Betutu", 
+            "Ayam Kecap / Lengkuas / Sisit / Betutu", "Babi Kecap", "Udang Tepung", "Babi Kecap / Udang Tepung",
+            "Sate Babi", "Sate Ayam", "Capcay", "Tahu Semur", "Tempe Bacem", "Telor Bidadari", 
+            "Tahu Semur / Tempe Bacem / Telor Bidadari", "Jukut Paku", "Sayur Mie", "Paku Kalas", 
+            "Sayur Mie / Paku Kalas", "Babi Genyol Nangka", "Tum Babi", "Gerang Suna Cekuh", 
+            "Sambal Embe", "Ayam Panggang Sambal Matah", "Pesan Tlengis", "Soup Bakso", "Sup Bakso", 
+            "Es Krim", "Buah", "Krupuk", "Aqua", "Nasi", "Sate"
+        ];
+
+        const PACKAGES = {
+            "Paket 60K (New Product)": {
+                price: 60000,
+                items: ["Nasi Putih", "Ayam Kecap / Lengkuas / Sisit / Betutu", "Babi Kecap / Udang Tepung", "Sate Ayam", "Capcay", "Tahu Semur / Tempe Bacem / Telor Bidadari", "Jukut Paku", "Es Krim", "Buah", "Krupuk", "Aqua", "Sup Bakso"]
+            },
+            "Paket 50K (Best Seller)": {
+                price: 50000,
+                items: ["Nasi Putih", "Ayam Kecap / Lengkuas / Sisit / Betutu", "Babi Kecap", "Udang Tepung", "Sate Ayam", "Capcay", "Jukut Paku", "Es Krim", "Buah", "Krupuk", "Aqua"]
+            },
+            "Paket 40K": {
+                price: 40000,
+                items: ["Nasi", "Ayam Kecap / Lengkuas / Sisit / Betutu", "Telor Bidadari", "Tahu Semur", "Sayur Mie / Paku Kalas", "Capcay", "Es Krim", "Buah", "Krupuk", "Aqua", "Sate"]
+            },
+            "Paket 35K": {
+                price: 35000,
+                items: ["Nasi", "Ayam Kecap / Lengkuas / Sisit / Betutu", "Tahu Semur", "Jukut Paku", "Capcay", "Sate Ayam", "Buah", "Krupuk", "Aqua"]
+            }
+        };
+
+        function App() {
+            const invoiceRef = useRef(null);
+            const [darkMode, setDarkMode] = useState(false);
+
+            const [customerInfo, setCustomerInfo] = useState({ name: '', day: '', date: '', time: '', address: '', invoiceNo: '' });
+            const [orderType, setOrderType] = useState('Paket Catering');
+            const [selectedPackage, setSelectedPackage] = useState('Paket 60K (New Product)');
+            
+            const [cateringQty, setCateringQty] = useState("1");
+            
+            const [customBasePackage, setCustomBasePackage] = useState('Paket 60K (New Product)');
+            const [customItems, setCustomItems] = useState([...PACKAGES['Paket 60K (New Product)'].items]);
+            const [customQty, setCustomQty] = useState("1");
+            const [searchCustomMenu, setSearchCustomMenu] = useState(MENU_OPTIONS[0]);
+
+            const [boxItems, setBoxItems] = useState([]);
+            const [searchBoxMenu, setSearchBoxMenu] = useState(MENU_OPTIONS[0]);
+            
+            const [ongkir, setOngkir] = useState("0");
+
+            useEffect(() => {
+                if(!customerInfo.invoiceNo) {
+                    const now = new Date();
+                    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                    let nextSeq = parseInt(localStorage.getItem(`bdc_seq_${dateStr}`) || "0", 10) + 1;
+                    localStorage.setItem(`bdc_seq_${dateStr}`, nextSeq.toString());
+                    setCustomerInfo(prev => ({ ...prev, invoiceNo: `BDC/${dateStr}/${String(nextSeq).padStart(3, '0')}` }));
+                }
+            }, []);
+
+            useEffect(() => {
+                if (darkMode) document.documentElement.classList.add('dark');
+                else document.documentElement.classList.remove('dark');
+            }, [darkMode]);
+
+            const formatRupiah = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num || 0);
+
+            let subtotal = 0;
+            let currentUnitPrice = 0;
+            let currentQty = 0;
+
+            if (orderType === 'Paket Catering') { 
+                currentUnitPrice = PACKAGES[selectedPackage]?.price || 0; 
+                currentQty = parseInt(cateringQty) || 0; 
+                subtotal = currentUnitPrice * currentQty;
+            }
+            else if (orderType === 'Custom Menu') { 
+                currentUnitPrice = PACKAGES[customBasePackage]?.price || 0; 
+                currentQty = parseInt(customQty) || 0; 
+                subtotal = currentUnitPrice * currentQty;
+            }
+            else if (orderType === 'Menu Perkotak') { 
+                subtotal = boxItems.reduce((acc, item) => acc + ((parseInt(item.qty) || 0) * (parseFloat(item.price) || 0)), 0);
+            }
+            
+            const grandTotal = subtotal + (parseFloat(ongkir) || 0);
+
+            const handleCustomerChange = (e) => setCustomerInfo(prev => ({ ...prev, [e.target.name]: e.target.value }));
+
+            const downloadPNG = async () => {
+                const originalScrollY = window.scrollY;
+                window.scrollTo(0, 0); 
+                await new Promise(resolve => setTimeout(resolve, 100)); 
+                
+                try {
+                    const canvas = await html2canvas(invoiceRef.current, {
+                        scale: 3, 
+                        useCORS: true, 
+                        backgroundColor: '#FDF4E3',
+                        logging: false,
+                        scrollX: 0,
+                        scrollY: 0
+                    });
+                    const link = document.createElement('a');
+                    link.download = `Invoice-${customerInfo.invoiceNo.replace(/\//g, '-')}.png`;
+                    link.href = canvas.toDataURL("image/png"); 
+                    link.click();
+                } catch (err) {
+                    console.error("Gagal mengekspor gambar:", err);
+                } finally {
+                    window.scrollTo(0, originalScrollY); 
+                }
+            };
+
+            const downloadPDF = async () => {
+                const originalScrollY = window.scrollY;
+                window.scrollTo(0, 0);
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                try {
+                    const canvas = await html2canvas(invoiceRef.current, {
+                        scale: 3,
+                        useCORS: true,
+                        backgroundColor: '#FDF4E3',
+                        logging: false,
+                        scrollX: 0,
+                        scrollY: 0
+                    });
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                    pdf.save(`Invoice-${customerInfo.invoiceNo.replace(/\//g, '-')}.pdf`);
+                } catch (err) {
+                    console.error("Gagal mengekspor PDF:", err);
+                } finally {
+                    window.scrollTo(0, originalScrollY);
+                }
+            };
+
+            return (
+                <div className="max-w-[1400px] mx-auto px-4 py-6 md:py-10">
+                    
+                    <div className="no-print flex justify-between items-center mb-8 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-xl font-bold text-gray-800 dark:text-amber-400">Panel Invoice Budesak</h1>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => window.location.reload()} className="text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 px-3 py-2 rounded-lg font-semibold transition">Buat Baru</button>
+                            <button onClick={() => setDarkMode(!darkMode)} className="p-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 rounded-lg transition">{darkMode ? '☀️' : '🌙'}</button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                        
+                        <div className="no-print lg:col-span-5 space-y-6">
+                            
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <h2 className="text-lg font-bold text-gray-700 dark:text-amber-400 mb-4 border-b pb-2">Informasi Customer</h2>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div className="col-span-2">
+                                        <label className="block text-gray-500 font-semibold mb-1">Nama Customer</label>
+                                        <input type="text" name="name" value={customerInfo.name} onChange={handleCustomerChange} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-500 font-semibold mb-1">Hari</label>
+                                        <input type="text" name="day" value={customerInfo.day} onChange={handleCustomerChange} placeholder="Contoh: Senin" className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-500 font-semibold mb-1">Tanggal</label>
+                                        <input type="date" name="date" value={customerInfo.date} onChange={handleCustomerChange} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-500 font-semibold mb-1">Waktu</label>
+                                        <input type="time" name="time" value={customerInfo.time} onChange={handleCustomerChange} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-500 font-semibold mb-1">No Invoice</label>
+                                        <input type="text" value={customerInfo.invoiceNo} readOnly className="w-full p-2 border rounded-lg bg-gray-100 dark:bg-gray-700 font-bold tabular-nums" />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <label className="block text-gray-500 font-semibold mb-1">Alamat</label>
+                                        <textarea name="address" value={customerInfo.address} onChange={handleCustomerChange} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <div className="grid grid-cols-3 gap-2 bg-gray-100 dark:bg-gray-900 p-1 rounded-xl mb-4">
+                                    {['Paket Catering', 'Custom Menu', 'Menu Perkotak'].map(t => (
+                                        <button key={t} onClick={() => setOrderType(t)} className={`py-2 text-xs font-bold rounded-lg transition-all ${orderType === t ? 'bg-[#3E3228] text-[#FDF4E3] shadow-md' : 'text-gray-500'}`}>{t}</button>
+                                    ))}
+                                </div>
+
+                                {orderType === 'Paket Catering' && (
+                                    <div className="space-y-4 text-sm">
+                                        <div>
+                                            <label className="block text-gray-500 font-semibold mb-1">Pilih Paket</label>
+                                            <select value={selectedPackage} onChange={e => setSelectedPackage(e.target.value)} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700">
+                                                {Object.keys(PACKAGES).map(p => <option key={p} value={p}>{p}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-gray-500 font-semibold mb-1">Jumlah Porsi</label>
+                                            <input type="number" value={cateringQty} onChange={e => setCateringQty(e.target.value)} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {orderType === 'Custom Menu' && (
+                                    <div className="space-y-4 text-sm">
+                                        <div>
+                                            <label className="block text-gray-500 font-semibold mb-1">Base Paket</label>
+                                            <select value={customBasePackage} onChange={e => {setCustomBasePackage(e.target.value); setCustomItems([...PACKAGES[e.target.value].items])}} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700">
+                                                {Object.keys(PACKAGES).map(p => <option key={p} value={p}>{p}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="bg-gray-50 dark:bg-gray-900 border p-3 rounded-lg max-h-48 overflow-auto custom-scrollbar">
+                                            {customItems.map((item, idx) => (
+                                                <div key={idx} className="flex justify-between items-center text-xs mb-2 p-1.5 bg-white dark:bg-gray-800 border rounded shadow-sm">
+                                                    <span>{item}</span>
+                                                    <button onClick={() => setCustomItems(prev=>prev.filter((_, i) => i !== idx))} className="text-red-500 font-bold hover:text-red-700 px-2">X</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <select value={searchCustomMenu} onChange={e => setSearchCustomMenu(e.target.value)} className="flex-1 p-2 border rounded-lg text-xs"><option value="">--Tambah Menu--</option>{MENU_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                            <button onClick={() => searchCustomMenu && !customItems.includes(searchCustomMenu) && setCustomItems([...customItems, searchCustomMenu])} className="bg-green-600 hover:bg-green-700 text-white px-4 rounded-lg text-xs font-bold transition">Tambah</button>
+                                        </div>
+                                        <div>
+                                            <label className="block text-gray-500 font-semibold mb-1">Jumlah Porsi</label>
+                                            <input type="number" value={customQty} onChange={e => setCustomQty(e.target.value)} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {orderType === 'Menu Perkotak' && (
+                                    <div className="space-y-4 text-sm">
+                                        <div className="flex gap-2 items-end">
+                                            <div className="flex-1">
+                                                <label className="block text-gray-500 font-semibold mb-1 text-xs">Pilih Menu Kotak</label>
+                                                <select value={searchBoxMenu} onChange={e => setSearchBoxMenu(e.target.value)} className="w-full p-2 border rounded-lg text-xs dark:bg-gray-900 dark:border-gray-700">
+                                                    {MENU_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                                                </select>
+                                            </div>
+                                            <button onClick={() => searchBoxMenu && setBoxItems([...boxItems, {name: searchBoxMenu, qty: "1", price: "10000"}])} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 h-[38px] rounded-lg text-xs font-bold transition">
+                                                Tambah Item
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="bg-gray-50 dark:bg-gray-900 border p-3 rounded-lg max-h-60 overflow-auto custom-scrollbar space-y-2">
+                                            {boxItems.length === 0 && <p className="text-center text-xs text-gray-400 italic">Belum ada item ditambahkan.</p>}
+                                            {boxItems.map((item, idx) => (
+                                                <div key={idx} className="flex flex-col gap-2 p-2 bg-white dark:bg-gray-800 border rounded shadow-sm">
+                                                    <div className="flex justify-between items-center font-bold text-gray-700 dark:text-gray-300">
+                                                        <span>{idx + 1}. {item.name}</span>
+                                                        <button onClick={() => setBoxItems(prev=>prev.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700 text-xs px-2">Hapus</button>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <div className="w-1/3">
+                                                            <label className="text-[10px] text-gray-500 uppercase">Qty</label>
+                                                            <input type="number" value={item.qty} onChange={(e) => {
+                                                                const newItems = [...boxItems];
+                                                                newItems[idx].qty = e.target.value;
+                                                                setBoxItems(newItems);
+                                                            }} className="w-full p-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600" />
+                                                        </div>
+                                                        <div className="w-2/3">
+                                                            <label className="text-[10px] text-gray-500 uppercase">Harga Satuan (Rp)</label>
+                                                            <input type="number" value={item.price} onChange={(e) => {
+                                                                const newItems = [...boxItems];
+                                                                newItems[idx].price = e.target.value;
+                                                                setBoxItems(newItems);
+                                                            }} className="w-full p-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                    <label className="block text-gray-500 font-semibold mb-1 text-sm">Ongkos Kirim</label>
+                                    <input type="number" value={ongkir} onChange={e => setOngkir(e.target.value)} className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700 tabular-nums" placeholder="0" />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3">
+                                <button onClick={()=>window.print()} className="bg-[#3E3228] hover:bg-black text-[#FDF4E3] font-bold py-3.5 rounded-xl text-sm transition shadow-md">Cetak Print</button>
+                                <button onClick={downloadPDF} className="bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-xl text-sm transition shadow-md">Unduh PDF</button>
+                                <button onClick={downloadPNG} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm transition shadow-md">Unduh PNG</button>
+                            </div>
+                        </div>
+
+                        {/* BAGIAN KANAN: PREVIEW INVOICE A4 (STRUKTUR ANTI-GESER VERSI FINAL) */}
+                        <div className="lg:col-span-7 flex justify-center print-full bg-gray-200 dark:bg-gray-800 p-4 rounded-xl overflow-auto custom-scrollbar">
+                            
+                            <div id="budesak-invoice-canvas" ref={invoiceRef} className="bg-[#FDF4E3] text-[#3E3228] flex flex-col justify-between" 
+                                style={{ 
+                                    width: '210mm', minHeight: '297mm', 
+                                    padding: '12mm 15mm', 
+                                    boxSizing: 'border-box',
+                                    backgroundColor: '#FDF4E3', color: '#3E3228',
+                                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)' 
+                                }}>
+                                
+                                <div>
+                                    {/* HEADER INVOICE: Struktur Tabel Murni */}
+                                    <div style={{ display: 'table', width: '100%', borderBottom: '3px solid #3E3228', paddingBottom: '20px', marginBottom: '24px' }}>
+                                        <div style={{ display: 'table-cell', verticalAlign: 'middle', width: '60%' }}>
+                                            <div style={{ display: 'table', width: '100%' }}>
+                                                {/* Pembungkus Logo Sel Tabel */}
+                                                <div style={{ display: 'table-cell', verticalAlign: 'middle', width: '120px' }}>
+                                                    {/* PERBAIKAN: height diubah menjadi 'auto' agar TIDAK GEPENG */}
+                                                    <img src="logobu.png" alt="Budesak Logo" style={{ width: '120px', height: 'auto', display: 'block' }} />
+                                                </div>
+                                                <div style={{ display: 'table-cell', verticalAlign: 'middle', paddingLeft: '16px' }}>
+                                                    <div style={{ fontSize: '30px', fontWeight: '900', lineHeight: '32px', color: '#3E3228', textTransform: 'uppercase' }} className="font-serif-brand">Budesak</div>
+                                                    <div style={{ fontSize: '16px', fontWeight: '700', letterSpacing: '0.2em', color: '#3E3228', textTransform: 'uppercase', marginTop: '2px' }}>Catering</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div style={{ display: 'table-cell', verticalAlign: 'middle', textAlign: 'right', width: '40%' }}>
+                                            <div style={{ fontSize: '34px', fontWeight: '900', color: '#3E3228', opacity: '0.2', letterSpacing: '0.15em', lineHeight: '34px', marginBottom: '6px' }}>INVOICE</div>
+                                            <div style={{ backgroundColor: '#3E3228', color: '#FDF4E3', fontSize: '11px', fontWeight: '600', height: '28px', lineHeight: '28px', paddingLeft: '14px', paddingRight: '14px', borderRadius: '4px', display: 'inline-block', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }} className="tabular-nums">
+                                                {customerInfo.invoiceNo || "BDC/YYYYMMDD/000"}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* DATA CUSTOMER & PENGIRIMAN */}
+                                    <div style={{ display: 'table', width: '100%', tableLayout: 'fixed', marginBottom: '32px' }}>
+                                        <div style={{ display: 'table-cell', verticalAlign: 'top', width: '50%', paddingRight: '16px' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#3E3228', opacity: '0.6', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>Tagihan Kepada:</div>
+                                            <div style={{ fontSize: '22px', fontWeight: '700', lineHeight: '26px', color: '#3E3228', textTransform: 'capitalize' }} className="font-serif-brand">{customerInfo.name || "-"}</div>
+                                            <div style={{ fontSize: '13px', fontWeight: '500', lineHeight: '18px', color: '#3E3228', opacity: '0.9', marginTop: '8px' }}>{customerInfo.address || "-"}</div>
+                                        </div>
+                                        
+                                        <div style={{ display: 'table-cell', verticalAlign: 'top', width: '50%', paddingLeft: '24px', borderLeft: '2px solid rgba(62, 50, 40, 0.2)' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#3E3228', opacity: '0.6', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>Jadwal Pengiriman:</div>
+                                            <table style={{ width: '100%', tableLayout: 'fixed', fontSize: '13px', fontWeight: '600', color: '#3E3228', borderCollapse: 'collapse' }}>
+                                                <tbody>
+                                                    <tr><td style={{ width: '30%', padding: '4px 0', lineHeight: '16px' }}>Hari</td><td style={{ width: '70%', padding: '4px 0', lineHeight: '16px' }}>: <span style={{ fontWeight: '700', textTransform: 'capitalize' }}>{customerInfo.day || "-"}</span></td></tr>
+                                                    <tr><td style={{ padding: '4px 0', lineHeight: '16px' }}>Tanggal</td><td style={{ padding: '4px 0', lineHeight: '16px' }}>: <span style={{ fontWeight: '700' }} className="tabular-nums">{customerInfo.date ? new Date(customerInfo.date).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}) : "-"}</span></td></tr>
+                                                    <tr><td style={{ padding: '4px 0', lineHeight: '16px' }}>Waktu</td><td style={{ padding: '4px 0', lineHeight: '16px' }}>: <span style={{ fontWeight: '700' }} className="tabular-nums">{customerInfo.time || "-"} WITA</span></td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    /* BAR BANNER INFO PESANAN */
+                                    <div style={{ backgroundColor: '#3E3228', color: '#FDF4E3', fontSize: '12px', fontWeight: '700', padding: '10px 16px', borderTopLeftRadius: '6px', borderTopRightRadius: '6px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'table', width: '100%' }}>
+                                        <div style={{ display: 'table-cell', textAlign: 'left', verticalAlign: 'middle' }}>
+                                            Pesanan: {orderType} {orderType === 'Custom Menu' ? `(${customBasePackage})` : ''}
+                                        </div>
+                                        {orderType !== 'Menu Perkotak' && (
+                                            <div style={{ display: 'table-cell', textAlign: 'right', verticalAlign: 'middle' }}>
+                                                Total: {currentQty} Porsi
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* TABEL INVOICE UTAMA */}
+                                    <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', border: '1px solid #3E3228', marginBottom: '24px', fontSize: '12px', color: '#3E3228' }}>
+                                        <thead>
+                                            <tr style={{ backgroundColor: 'rgba(62, 50, 40, 0.1)', fontWeight: '700', textTransform: 'uppercase' }}>
+                                                <th style={{ border: '1px solid #3E3228', padding: '10px', textAlign: 'center', width: '8%', lineHeight: '14px' }}>No</th>
+                                                
+                                                {orderType !== 'Menu Perkotak' ? (
+                                                    <th style={{ border: '1px solid #3E3228', padding: '10px', textAlign: 'left', width: '92%', lineHeight: '14px' }}>Deskripsi Menu</th>
+                                                ) : (
+                                                    <>
+                                                        <th style={{ border: '1px solid #3E3228', padding: '10px', textAlign: 'left', width: '47%', lineHeight: '14px' }}>Deskripsi Menu</th>
+                                                        <th style={{ border: '1px solid #3E3228', padding: '10px', textAlign: 'center', width: '10%', lineHeight: '14px' }}>Qty</th>
+                                                        <th style={{ border: '1px solid #3E3228', padding: '10px', textAlign: 'right', width: '15%', lineHeight: '14px' }}>Harga</th>
+                                                        <th style={{ border: '1px solid #3E3228', padding: '10px', textAlign: 'right', width: '20%', lineHeight: '14px' }}>Total</th>
+                                                    </>
+                                                )}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {orderType !== 'Menu Perkotak' && (
+                                                (orderType === 'Paket Catering' ? PACKAGES[selectedPackage]?.items : customItems).map((item, idx) => (
+                                                    <tr key={idx} style={{ backgroundColor: 'rgba(255,255,255,0.3)' }}>
+                                                        <td style={{ border: '1px solid #3E3228', padding: '9px 8px', textAlign: 'center', fontWeight: '700', opacity: '0.7', lineHeight: '16px' }} className="tabular-nums">{idx + 1}</td>
+                                                        <td style={{ border: '1px solid #3E3228', padding: '9px 12px', fontWeight: '500', fontSize: '13px', lineHeight: '16px' }}>{item}</td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                            
+                                            {orderType === 'Menu Perkotak' && (
+                                                boxItems.length > 0 ? boxItems.map((item, idx) => {
+                                                    const itemQty = parseInt(item.qty) || 0;
+                                                    const itemPrice = parseFloat(item.price) || 0;
+                                                    const itemTotal = itemQty * itemPrice;
+                                                    return (
+                                                        <tr key={idx} style={{ backgroundColor: 'rgba(255,255,255,0.3)' }}>
+                                                            <td style={{ border: '1px solid #3E3228', padding: '9px 8px', textAlign: 'center', fontWeight: '700', opacity: '0.7', lineHeight: '16px' }} className="tabular-nums">{idx + 1}</td>
+                                                            <td style={{ border: '1px solid #3E3228', padding: '9px 12px', fontWeight: '500', fontSize: '13px', lineHeight: '16px' }}>{item.name}</td>
+                                                            <td style={{ border: '1px solid #3E3228', padding: '9px 8px', textAlign: 'center', fontWeight: '700', lineHeight: '16px' }} className="tabular-nums">{itemQty}</td>
+                                                            <td style={{ border: '1px solid #3E3228', padding: '9px 12px', textAlign: 'right', fontWeight: '500', lineHeight: '16px' }} className="tabular-nums">{formatRupiah(itemPrice)}</td>
+                                                            <td style={{ border: '1px solid #3E3228', padding: '9px 12px', textAlign: 'right', fontWeight: '700', lineHeight: '16px' }} className="tabular-nums">{formatRupiah(itemTotal)}</td>
+                                                        </tr>
+                                                    )
+                                                }) : (
+                                                    <tr style={{ backgroundColor: 'rgba(255,255,255,0.3)' }}><td colSpan="5" style={{ border: '1px solid #3E3228', padding: '20px', textAlign: 'center', fontStyle: 'italic', color: '#a0aec0' }}>Belum ada item ditambahkan.</td></tr>
+                                                )
+                                            )}
+                                        </tbody>
+                                    </table>
+
+                                    {/* RINGKASAN HARGA */}
+                                    <div style={{ display: 'table', width: '100%', marginBottom: '40px' }}>
+                                        <div style={{ display: 'table-cell', width: '35%' }}></div>
+                                        <div style={{ display: 'table-cell', width: '65%' }}>
+                                            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '13px', fontWeight: '700', color: '#3E3228', tableLayout: 'fixed' }}>
+                                                <tbody>
+                                                    {orderType !== 'Menu Perkotak' && (
+                                                        <>
+                                                            <tr style={{ borderBottom: '1px solid rgba(62, 50, 40, 0.3)' }}>
+                                                                <td style={{ padding: '10px 24px 10px 0', textAlign: 'right', textTransform: 'uppercase', fontSize: '11px', opacity: '0.8', width: '60%', lineHeight: '14px' }}>Harga Per Porsi:</td>
+                                                                <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: '600', width: '40%', lineHeight: '14px' }} className="tabular-nums">{formatRupiah(currentUnitPrice)}</td>
+                                                            </tr>
+                                                            <tr style={{ borderBottom: '1px solid rgba(62, 50, 40, 0.3)' }}>
+                                                                <td style={{ padding: '10px 24px 10px 0', textAlign: 'right', textTransform: 'uppercase', fontSize: '11px', opacity: '0.8', lineHeight: '14px' }}>Subtotal ({currentQty} Porsi):</td>
+                                                                <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: '600', lineHeight: '14px' }} className="tabular-nums">{formatRupiah(subtotal)}</td>
+                                                            </tr>
+                                                        </>
+                                                    )}
+                                                    
+                                                    {orderType === 'Menu Perkotak' && (
+                                                        <tr style={{ borderBottom: '1px solid rgba(62, 50, 40, 0.3)' }}>
+                                                            <td style={{ padding: '10px 24px 10px 0', textAlign: 'right', textTransform: 'uppercase', fontSize: '11px', opacity: '0.8', width: '60%', lineHeight: '14px' }}>Total Harga Menu:</td>
+                                                            <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: '600', width: '40%', lineHeight: '14px' }} className="tabular-nums">{formatRupiah(subtotal)}</td>
+                                                        </tr>
+                                                    )}
+
+                                                    <tr style={{ borderBottom: '1px solid rgba(62, 50, 40, 0.3)' }}>
+                                                        <td style={{ padding: '10px 24px 10px 0', textAlign: 'right', textTransform: 'uppercase', fontSize: '11px', opacity: '0.8', lineHeight: '14px' }}>Biaya Pengiriman:</td>
+                                                        <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: '600', lineHeight: '14px' }} className="tabular-nums">{formatRupiah(parseFloat(ongkir)||0)}</td>
+                                                    </tr>
+                                                    <tr style={{ backgroundColor: '#3E3228', color: '#FDF4E3' }}>
+                                                        <td style={{ padding: '12px 24px', textAlign: 'right', fontWeight: '900', textTransform: 'uppercase', fontSize: '12px', borderTopLeftRadius: '4px', borderBottomLeftRadius: '4px', lineHeight: '16px' }}>Grand Total:</td>
+                                                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '900', fontSize: '16px', borderTopRightRadius: '4px', borderBottomRightRadius: '4px', lineHeight: '16px' }} className="tabular-nums">{formatRupiah(grandTotal)}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* FOOTER */}
+                                <div style={{ borderTop: '1px solid rgba(62, 50, 40, 0.3)', paddingTop: '24px', textAlign: 'center', marginTop: 'auto', paddingBottom: '16px' }}>
+                                    <p style={{ fontSize: '11.5px', fontWeight: '500', lineHeight: '1.6', maxWidth: '100%', margin: '0 auto 16px auto', opacity: '0.9' }}>
+                                        Terima kasih atas pesanan Anda kepada <span style={{ fontWeight: '700' }}>Budesak Catering</span>.<br/>
+                                        Kami berkomitmen memberikan sajian terbaik untuk setiap momen spesial Anda.
+                                    </p>
+                                    
+                                    <div style={{ display: 'table', margin: '0 auto', fontSize: '11px', fontWeight: '700', padding: '4px 0' }}>
+                                        <div style={{ display: 'inline-block', marginRight: '32px' }}>
+                                            <span style={{ display: 'inline-block', width: '20px', height: '20px', backgroundColor: '#25D366', color: 'white', borderRadius: '50%', textAlign: 'center', lineHeight: '20px', fontSize: '10px', marginRight: '6px', fontWeight: 'bold' }}>W</span>
+                                            +62 878-6015-2223
+                                        </div>
+                                        <div style={{ display: 'inline-block' }}>
+                                            <span style={{ display: 'inline-block', width: '20px', height: '20px', backgroundColor: '#E1306C', color: 'white', borderRadius: '4px', textAlign: 'center', lineHeight: '20px', fontSize: '10px', marginRight: '6px', fontWeight: 'bold' }}>IG</span>
+                                            @catering_budesak
+                                        </div>
+                                    </div>
+                                    
+                                    <div style={{ fontSize: '17px', fontWeight: '700', fontStyle: 'italic', marginTop: '24px', color: '#3E3228', lineHeight: '1.3' }} className="font-serif-brand">
+                                        Salam Hangat,<br/>
+                                        <span style={{ fontSize: '22px', fontWeight: '900', display: 'block', marginTop: '2px', fontStyle: 'normal', letterSpacing: '0.02em' }}>Budesak Catering</span>
+                                    </div>
+                                </div>
+                                
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+            );
+        }
+        const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<App />);
+    </script>
+</body>
+</html>
